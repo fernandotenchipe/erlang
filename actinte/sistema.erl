@@ -10,8 +10,7 @@
 %%% Exportar las funciones del módulo
 -export([abre_tienda/0, cierra_tienda/0, lista_socios/0, productos_vendidos/0,
     suscribir_socio/1, elimina_socio/1, crea_pedido/2, lista_existencias/0,
-    registra_producto/2, elimina_producto/1, modifica_producto/2
-]).
+    registra_producto/2, elimina_producto/1, modifica_producto/2]).
 
 %%% Variable global para la tienda
 -define(TIENDA, tienda).
@@ -21,8 +20,7 @@
     socios = [],
     productos = #{},
     pedidos = [],
-    contador_pedidos = 0
-}).
+    contador_pedidos = 0 }).
 
 %%% Función para abrir la tienda
 abre_tienda() ->
@@ -89,7 +87,6 @@ call_tienda(Request) ->
     end.
 
 %%% Funciones de API
-
 suscribir_socio(Socio) ->
     call_tienda({suscribir_socio, Socio}).
 
