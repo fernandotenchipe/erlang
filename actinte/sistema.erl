@@ -6,16 +6,12 @@
 
 %%% Módulo del sistema
 -module(sistema).
--export([start_tienda/0, start_socio/1, suscribir_socio/1, elimina_socio/1, crea_pedido/2, lista_existencias/0, socio_loop/1, tienda_loop/3]).
+-export([start_tienda/0, start_socio/1, suscribir_socio/1, elimina_socio/1, crea_pedido/2, lista_existencias/0, registra_producto/2, elimina_producto/1, modifica_producto/2, socio_loop/1, tienda_loop/3, producto_loop/1]).
 
 %% Funciones de la tienda
 
 start_tienda() ->
-    InitialInventory = [
-        {producto1, 10},
-        {producto2, 20},
-        {producto3, 15}
-    ],
+    InitialInventory = [],
     register(tienda, spawn(sistema, tienda_loop, [[], InitialInventory, 0])).
 
 tienda_loop(Socios, Inventory, OrderCount) ->
@@ -54,27 +50,56 @@ tienda_loop(Socios, Inventory, OrderCount) ->
         {lista_existencias, From} ->
             io:format("Recibe: solicitud de lista de existencias~n"),
             From ! {respuesta_existencias, Inventory},
-            tienda_loop(Socios, Inventory, OrderCount)
+            tienda_loop(Socios, Inventory, OrderCount);
+        {registra_producto, Producto, Cantidad} ->
+            io:format("Recibe: registro de producto ~p con cantidad ~p~n", [Producto, Cantidad]),
+            case lists:keyfind(Producto, 1, Inventory) of
+                false ->
+                    ProductoPid = spawn(sistema, producto_loop, [{Producto, Cantidad}]),
+                    tienda_loop(Socios, [{Producto, ProductoPid} | Inventory], OrderCount);
+                _ ->
+                    io:format("Error: producto ~p ya está registrado~n", [Producto]),
+                    tienda_loop(Socios, Inventory, OrderCount)
+            end;
+        {elimina_producto, Producto} ->
+            io:format("Recibe: solicitud de eliminación de producto ~p~n", [Producto]),
+            case lists:keyfind(Producto, 1, Inventory) of
+                {Producto, ProductoPid} ->
+                    ProductoPid ! stop,
+                    tienda_loop(Socios, lists:keydelete(Producto, 1, Inventory), OrderCount);
+                false ->
+                    io:format("Error: producto ~p no está registrado~n", [Producto]),
+                    tienda_loop(Socios, Inventory, OrderCount)
+            end;
+        {modifica_producto, Producto, Cantidad} ->
+            io:format("Recibe: modificación de producto ~p con cantidad ~p~n", [Producto, Cantidad]),
+            case lists:keyfind(Producto, 1, Inventory) of
+                {Producto, ProductoPid} ->
+                    ProductoPid ! {modificar, Cantidad},
+                    tienda_loop(Socios, Inventory, OrderCount);
+                false ->
+                    io:format("Error: producto ~p no está registrado~n", [Producto]),
+                    tienda_loop(Socios, Inventory, OrderCount)
+            end
     end.
 
 procesar_pedido(ListaDeProductos, Inventory) ->
-    {Respuesta, NuevoInventario} = lists:foldl(
+    lists:foldl(
         fun({Producto, Cantidad}, {AccRespuesta, AccInventario}) ->
             case lists:keyfind(Producto, 1, AccInventario) of
-                {Producto, Stock} when Stock >= Cantidad ->
-                    {[{Producto, Cantidad} | AccRespuesta],
-                     lists:keyreplace(Producto, 1, AccInventario, {Producto, Stock - Cantidad})};
-                {Producto, Stock} ->
-                    {[{Producto, Stock} | AccRespuesta],
-                     lists:keyreplace(Producto, 1, AccInventario, {Producto, 0})};
+                {Producto, ProductoPid} ->
+                    ProductoPid ! {surtir, self(), Cantidad},
+                    receive
+                        {Producto, Surtido} ->
+                            {[{Producto, Surtido} | AccRespuesta], AccInventario}
+                    end;
                 false ->
-                    {AccRespuesta, AccInventario}
+                    {[{Producto, 0} | AccRespuesta], AccInventario}
             end
         end,
         {[], Inventory},
         ListaDeProductos
-    ),
-    {lists:reverse(Respuesta), NuevoInventario}.
+    ).
 
 %% Funciones de los socios
 
@@ -124,6 +149,21 @@ lista_existencias() ->
             Inventario
     end.
 
+registra_producto(Producto, Cantidad) ->
+    TiendaPid = whereis(tienda),
+    io:format("Manda: registrar producto ~p con cantidad ~p~n", [Producto, Cantidad]),
+    TiendaPid ! {registra_producto, Producto, Cantidad}.
+
+elimina_producto(Producto) ->
+    TiendaPid = whereis(tienda),
+    io:format("Manda: eliminar producto ~p~n", [Producto]),
+    TiendaPid ! {elimina_producto, Producto}.
+
+modifica_producto(Producto, Cantidad) ->
+    TiendaPid = whereis(tienda),
+    io:format("Manda: modificar producto ~p con cantidad ~p~n", [Producto, Cantidad]),
+    TiendaPid ! {modifica_producto, Producto, Cantidad}.
+
 socio_loop(TiendaPid) ->
     receive
         {suscribir_socio, Socio} ->
@@ -138,4 +178,25 @@ socio_loop(TiendaPid) ->
         {lista_existencias} ->
             sistema:lista_existencias(),
             socio_loop(TiendaPid)
+    end.
+
+%% Funciones del producto
+
+producto_loop({Producto, Cantidad}) ->
+    io:format("Inicia proceso para producto ~p con cantidad ~p~n", [Producto, Cantidad]),
+    producto_loop(Producto, Cantidad).
+
+producto_loop(Producto, Cantidad) ->
+    receive
+        {surtir, From, PedidoCantidad} ->
+            Surtido = min(Cantidad, PedidoCantidad),
+            io:format("Producto ~p: surte ~p de ~p solicitados~n", [Producto, Surtido, PedidoCantidad]),
+            From ! {Producto, Surtido},
+            producto_loop(Producto, Cantidad - Surtido);
+        {modificar, ModCantidad} ->
+            NuevaCantidad = max(Cantidad + ModCantidad, 0),
+            io:format("Producto ~p: cantidad modificada a ~p~n", [Producto, NuevaCantidad]),
+            producto_loop(Producto, NuevaCantidad);
+        stop ->
+            io:format("Producto ~p: proceso terminado~n", [Producto])
     end.
