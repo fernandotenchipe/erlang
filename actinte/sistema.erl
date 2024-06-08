@@ -1,4 +1,4 @@
-%%% Archivo: sistema_distribuido.erl
+%%% Archivo: sistema.erl
 %%% Descripción: Sistema distribuido de compras en Erlang sin librerías externas
 %%% Fernando Tenchipe Morales A01571277
 %%% David Alejandro Lozano Arreola A01722728
@@ -6,235 +6,136 @@
 
 %%% Módulo del sistema
 -module(sistema).
+-export([start_tienda/0, start_socio/1, suscribir_socio/1, elimina_socio/1, crea_pedido/2, lista_existencias/0, socio_loop/1, tienda_loop/3]).
 
-%%% Exportar las funciones del módulo
--export([abre_tienda/0, cierra_tienda/0, lista_socios/0, productos_vendidos/0,
-    suscribir_socio/1, elimina_socio/1, crea_pedido/2, lista_existencias/0,
-    registra_producto/2, elimina_producto/1, modifica_producto/2]).
+%% Funciones de la tienda
 
-%%% Variable global para la tienda
--define(TIENDA, tienda).
+start_tienda() ->
+    InitialInventory = [
+        {producto1, 10},
+        {producto2, 20},
+        {producto3, 15}
+    ],
+    register(tienda, spawn(sistema, tienda_loop, [[], InitialInventory, 0])).
 
-%%% Record para la tienda
--record(tienda, {
-    socios = [],
-    productos = #{},
-    pedidos = [],
-    contador_pedidos = 0 }).
-
-%%% Función para abrir la tienda
-abre_tienda() ->
-    register(?TIENDA, spawn(fun() -> init_tienda(#tienda{}) end)),
-    io:format("Tienda abierta~n").
-
-%%% Función para cerrar la tienda
-cierra_tienda() ->
-    case whereis(?TIENDA) of
-        undefined ->
-            io:format("La tienda no está abierta~n");
-        Pid ->
-            Pid ! stop,
-            unregister(?TIENDA),
-            io:format("Tienda cerrada~n")
-    end.
-
-%%% Inicializar el estado de la tienda
-init_tienda(State) ->
-    process_flag(trap_exit, true),
-    tienda(State).
-
-%%% Proceso principal de la tienda
-tienda(State) ->
+tienda_loop(Socios, Inventory, OrderCount) ->
     receive
-        stop ->
-            io:format("Proceso de tienda terminado~n"),
-            exit(normal);
-        {From, Request} ->
-            spawn(fun() -> handle_request(Request, State, From) end),
-            tienda(State)
+        {suscribir_socio, From, Socio} ->
+            io:format("Recibe: solicitud de suscripción de ~p~n", [Socio]),
+            case lists:member(Socio, Socios) of
+                true ->
+                    From ! {respuesta_suscripcion, {error, ya_existe}},
+                    tienda_loop(Socios, Inventory, OrderCount);
+                false ->
+                    From ! {respuesta_suscripcion, ok},
+                    tienda_loop([Socio | Socios], Inventory, OrderCount)
+            end;
+        {elimina_socio, From, Socio} ->
+            io:format("Recibe: solicitud de eliminación de ~p~n", [Socio]),
+            case lists:member(Socio, Socios) of
+                true ->
+                    From ! {respuesta_eliminacion, ok},
+                    tienda_loop(lists:delete(Socio, Socios), Inventory, OrderCount);
+                false ->
+                    From ! {respuesta_eliminacion, {error, no_existe}},
+                    tienda_loop(Socios, Inventory, OrderCount)
+            end;
+        {crea_pedido, From, Socio, ListaDeProductos} ->
+            io:format("Recibe: pedido de ~p con productos ~p~n", [Socio, ListaDeProductos]),
+            case lists:member(Socio, Socios) of
+                true ->
+                    {Respuesta, NuevoInventario} = procesar_pedido(ListaDeProductos, Inventory),
+                    From ! {respuesta_pedido, {ok, OrderCount, Respuesta}},
+                    tienda_loop(Socios, NuevoInventario, OrderCount + 1);
+                false ->
+                    From ! {respuesta_pedido, {error, no_socio}},
+                    tienda_loop(Socios, Inventory, OrderCount)
+            end;
+        {lista_existencias, From} ->
+            io:format("Recibe: solicitud de lista de existencias~n"),
+            From ! {respuesta_existencias, Inventory},
+            tienda_loop(Socios, Inventory, OrderCount)
     end.
 
-%%% Manejar las solicitudes
-handle_request({suscribir_socio, Socio}, State, From) ->
-    handle_suscribir_socio(Socio, State, From);
-handle_request({elimina_socio, Socio}, State, From) ->
-    handle_elimina_socio(Socio, State, From);
-handle_request({crea_pedido, Socio, Productos}, State, From) ->
-    handle_crea_pedido(Socio, Productos, State, From);
-handle_request({lista_existencias}, State, From) ->
-    handle_lista_existencias(State, From);
-handle_request({registra_producto, Producto, Cantidad}, State, From) ->
-    handle_registra_producto(Producto, Cantidad, State, From);
-handle_request({elimina_producto, Producto}, State, From) ->
-    handle_elimina_producto(Producto, State, From);
-handle_request({modifica_producto, Producto, Cantidad}, State, From) ->
-    handle_modifica_producto(Producto, Cantidad, State, From);
-handle_request({lista_socios}, State, From) ->
-    handle_lista_socios(State, From);
-handle_request({productos_vendidos}, State, From) ->
-    handle_productos_vendidos(State, From).
-
-%%% Función para enviar solicitudes a la tienda
-call_tienda(Request) ->
-    case whereis(?TIENDA) of
-        undefined ->
-            io:format("La tienda no está abierta~n");
-        Pid ->
-            Pid ! {self(), Request},
-            receive
-                Response -> Response
+procesar_pedido(ListaDeProductos, Inventory) ->
+    {Respuesta, NuevoInventario} = lists:foldl(
+        fun({Producto, Cantidad}, {AccRespuesta, AccInventario}) ->
+            case lists:keyfind(Producto, 1, AccInventario) of
+                {Producto, Stock} when Stock >= Cantidad ->
+                    {[{Producto, Cantidad} | AccRespuesta],
+                     lists:keyreplace(Producto, 1, AccInventario, {Producto, Stock - Cantidad})};
+                {Producto, Stock} ->
+                    {[{Producto, Stock} | AccRespuesta],
+                     lists:keyreplace(Producto, 1, AccInventario, {Producto, 0})};
+                false ->
+                    {AccRespuesta, AccInventario}
             end
-    end.
+        end,
+        {[], Inventory},
+        ListaDeProductos
+    ),
+    {lists:reverse(Respuesta), NuevoInventario}.
 
-%%% Funciones de API
+%% Funciones de los socios
+
+start_socio(TiendaPid) ->
+    spawn(sistema, socio_loop, [TiendaPid]).
+
 suscribir_socio(Socio) ->
-    call_tienda({suscribir_socio, Socio}).
+    TiendaPid = whereis(tienda),
+    io:format("Manda: ~p solicita suscripción~n", [Socio]),
+    TiendaPid ! {suscribir_socio, self(), Socio},
+    receive
+        {respuesta_suscripcion, Resultado} ->
+            io:format("Recibe: respuesta de suscripción para ~p: ~p~n", [Socio, Resultado]),
+            Resultado
+    end.
 
 elimina_socio(Socio) ->
-    call_tienda({elimina_socio, Socio}).
+    TiendaPid = whereis(tienda),
+    io:format("Manda: ~p solicita eliminación de suscripción~n", [Socio]),
+    TiendaPid ! {elimina_socio, self(), Socio},
+    receive
+        {respuesta_eliminacion, Resultado} ->
+            io:format("Recibe: respuesta de eliminación para ~p: ~p~n", [Socio, Resultado]),
+            Resultado
+    end.
 
-crea_pedido(Socio, Productos) ->
-    call_tienda({crea_pedido, Socio, Productos}).
+crea_pedido(Socio, ListaDeProductos) ->
+    TiendaPid = whereis(tienda),
+    io:format("Manda: ~p realiza pedido ~p~n", [Socio, ListaDeProductos]),
+    TiendaPid ! {crea_pedido, self(), Socio, ListaDeProductos},
+    receive
+        {respuesta_pedido, {ok, NumeroPedido, ProductosSurtidos}} ->
+            io:format("Recibe: pedido número ~p con productos surtidos: ~p~n", [NumeroPedido, ProductosSurtidos]),
+            {ok, NumeroPedido, ProductosSurtidos};
+        {respuesta_pedido, {error, Motivo}} ->
+            io:format("Recibe: error en pedido para ~p: ~p~n", [Socio, Motivo]),
+            {error, Motivo}
+    end.
 
 lista_existencias() ->
-    call_tienda({lista_existencias}).
-
-registra_producto(Producto, Cantidad) ->
-    call_tienda({registra_producto, Producto, Cantidad}).
-
-elimina_producto(Producto) ->
-    call_tienda({elimina_producto, Producto}).
-
-modifica_producto(Producto, Cantidad) ->
-    call_tienda({modifica_producto, Producto, Cantidad}).
-
-lista_socios() ->
-    call_tienda({lista_socios}).
-
-productos_vendidos() ->
-    call_tienda({productos_vendidos}).
-
-%%% Implementaciones de manejo de solicitudes
-
-handle_suscribir_socio(Socio, State, From) ->
-    io:format("Recibe: solicitud de suscripción de ~p~n", [Socio]),
-    case lists:member(Socio, State#tienda.socios) of
-        true ->
-            From ! {error, "El socio ya está suscrito"},
-            tienda(State);
-        false ->
-            NewState = State#tienda{socios = [Socio | State#tienda.socios]},
-            From ! {ok, "Socio suscrito"},
-            tienda(NewState)
-    end.
-
-handle_elimina_socio(Socio, State, From) ->
-    io:format("Recibe: solicitud de eliminación de socio ~p~n", [Socio]),
-    NewState = State#tienda{socios = lists:delete(Socio, State#tienda.socios)},
-    From ! {ok, "Socio eliminado"},
-    tienda(NewState).
-
-handle_crea_pedido(Socio, Productos, State, From) ->
-    io:format("Recibe: pedido de ~p con productos ~p~n", [Socio, Productos]),
-    case lists:member(Socio, State#tienda.socios) of
-        false ->
-            From ! {error, "El socio no está suscrito"},
-            tienda(State);
-        true ->
-            NumeroPedido = State#tienda.contador_pedidos + 1,
-            {ProductosSurtidos, NuevoInventario} = verificar_inventario(Productos, State#tienda.productos),
-            NuevoEstado = State#tienda{
-                productos = NuevoInventario,
-                pedidos = [{NumeroPedido, Socio, ProductosSurtidos} | State#tienda.pedidos],
-                contador_pedidos = NumeroPedido
-            },
-            From ! {ok, {NumeroPedido, ProductosSurtidos}},
-            tienda(NuevoEstado)
-    end.
-
-handle_lista_existencias(State, From) ->
-    io:format("Existencias: ~p~n", [State#tienda.productos]),
-    From ! {ok, State#tienda.productos},
-    tienda(State).
-
-handle_registra_producto(Producto, Cantidad, State, From) ->
-    io:format("Recibe: registro de producto ~p con cantidad ~p~n", [Producto, Cantidad]),
-    Pid = spawn(fun() -> producto(Producto, Cantidad) end),
-    NuevoInventario = maps:put(Producto, Pid, State#tienda.productos),
-    NuevoEstado = State#tienda{productos = NuevoInventario},
-    From ! {ok, "Producto registrado"},
-    tienda(NuevoEstado).
-
-handle_elimina_producto(Producto, State, From) ->
-    io:format("Recibe: eliminación de producto ~p~n", [Producto]),
-    case maps:get(Producto, State#tienda.productos, undefined) of
-        undefined ->
-            From ! {error, "Producto no encontrado"},
-            tienda(State);
-        Pid ->
-            Pid ! stop,
-            NuevoInventario = maps:remove(Producto, State#tienda.productos),
-            NuevoEstado = State#tienda{productos = NuevoInventario},
-            From ! {ok, "Producto eliminado"},
-            tienda(NuevoEstado)
-    end.
-
-handle_modifica_producto(Producto, Cantidad, State, From) ->
-    io:format("Recibe: modificación de producto ~p con cantidad ~p~n", [Producto, Cantidad]),
-    case maps:get(Producto, State#tienda.productos, undefined) of
-        undefined ->
-            From ! {error, "Producto no encontrado"},
-            tienda(State);
-        Pid ->
-            Pid ! {modifica, Cantidad},
-            From ! {ok, "Producto modificado"},
-            tienda(State)
-    end.
-
-handle_lista_socios(State, From) ->
-    io:format("Socios suscritos: ~p~n", [State#tienda.socios]),
-    From ! {ok, State#tienda.socios},
-    tienda(State).
-
-handle_productos_vendidos(State, From) ->
-    io:format("Pedidos atendidos: ~p~n", [State#tienda.pedidos]),
-    From ! {ok, State#tienda.pedidos},
-    tienda(State).
-
-%%% Proceso de productos
-producto(Nombre, Cantidad) ->
-    loop_producto(Nombre, Cantidad).
-
-%%% Bucle principal del proceso de productos
-loop_producto(Nombre, Cantidad) ->
+    TiendaPid = whereis(tienda),
+    io:format("Manda: solicitud de lista de existencias~n"),
+    TiendaPid ! {lista_existencias, self()},
     receive
-        {modifica, CantidadMod} ->
-            NuevaCantidad = max(Cantidad + CantidadMod, 0),
-            io:format("Producto ~p modificado a cantidad ~p~n", [Nombre, NuevaCantidad]),
-            loop_producto(Nombre, NuevaCantidad);
-        stop ->
-            io:format("Proceso de producto ~p terminado~n", [Nombre]),
-            exit(normal);
-        {solicitar, CantidadSolicitada, Pid} ->
-            CantidadSurtida = min(Cantidad, CantidadSolicitada),
-            NuevaCantidad = Cantidad - CantidadSurtida,
-            Pid ! {CantidadSurtida, NuevaCantidad},
-            loop_producto(Nombre, NuevaCantidad)
+        {respuesta_existencias, Inventario} ->
+            io:format("Recibe: lista de existencias: ~p~n", [Inventario]),
+            Inventario
     end.
 
-%%% Verificación de inventario
-verificar_inventario([], Inventario) ->
-    {[], Inventario};
-verificar_inventario([{Producto, Cantidad} | Resto], Inventario) ->
-    case maps:get(Producto, Inventario, undefined) of
-        undefined ->
-            {[{Producto, 0} | ProductosRestantes], NuevoInventario} = verificar_inventario(Resto, Inventario),
-            {ProductosRestantes, NuevoInventario};
-        Pid ->
-            Pid ! {solicitar, Cantidad, self()},
-            receive
-                {CantidadSurtida, NuevaCantidad} ->
-                    {[{Producto, CantidadSurtida} | ProductosRestantes], NuevoInventario} = verificar_inventario(Resto, Inventario),
-                    {ProductosRestantes, maps:put(Producto, NuevaCantidad, NuevoInventario)}
-            end
+socio_loop(TiendaPid) ->
+    receive
+        {suscribir_socio, Socio} ->
+            sistema:suscribir_socio(Socio),
+            socio_loop(TiendaPid);
+        {elimina_socio, Socio} ->
+            sistema:elimina_socio(Socio),
+            socio_loop(TiendaPid);
+        {crea_pedido, Socio, ListaDeProductos} ->
+            sistema:crea_pedido(Socio, ListaDeProductos),
+            socio_loop(TiendaPid);
+        {lista_existencias} ->
+            sistema:lista_existencias(),
+            socio_loop(TiendaPid)
     end.
