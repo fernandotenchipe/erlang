@@ -9,7 +9,7 @@
 %% Cargar el módulo   | c(sistema).
 %% Iniciar            | sistema:abre_tienda().
 %% Agregar producto   | sistema:registra_producto(algo, 2).
-%% Modificar producto | sistema:modifica_producto(algo, 2).
+%% Modificar producto | sistema:modifica_producto(algo, 1).
 %% Listar existencias | sistema:lista_existencias(). 
 %% Eliminar producto  | sistema:elimina_producto(algo).
 %% Cerrar y borrar    | sistema:cierra_tienda().
