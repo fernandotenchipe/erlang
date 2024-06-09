@@ -9,14 +9,14 @@
 %% 1. Inicia la tienda con sistema:abre_tienda().
 %% 2. Agrega un producto a la tienda con sistema:registra_producto(nombre, cant).
 %% 3. Modifica un producto existente con sistema:modifica_producto(nombre, cant).
-%% 4. Consulta la lista de socios con sistema:lista_socios().
+%% 4. Consulta las existencias de productos con sistema:lista_existencias(). 
 %% 5. Elimina un producto con sistema:elimina_producto(nombre).
 %% 6. Cierra la tienda con sistema:cierra_tienda(). Esto borrará todos los datos de la tienda.
 
 %% Guía de Uso - FUNCIONES DEL SOCIO
 %% 1. Registra un nuevo socio con sistema:suscribir_socio(nom).
 %% 2. Elimina un socio existente con sistema:elimina_socio(nom).
-%% 3. Consulta las existencias de productos con sistema:lista_existencias().
+%% 3. Consulta la lista de socios con sistema:lista_socios().
 %% 4. Crea un pedido personalizado con sistema:crea_pedido(nom, [{nombre, cant}, {nombre1, cant1}]).
 
 %% Nota: Recuerda reemplazar los valores de nombreProducto, cantidad, nombreSocio, etc., con los valores que desees.
