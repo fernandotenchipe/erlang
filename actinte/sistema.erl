@@ -5,21 +5,19 @@
 %%% Gerardo Leiva Diaz A01198479
 
 
-%%% %% Guía de Uso - FUNCIONES DE LA TIENDA
-%% 1. Inicia la tienda con sistema:abre_tienda().
-%% 2. Agrega un producto a la tienda con sistema:registra_producto(nombre, cant).
-%% 3. Modifica un producto existente con sistema:modifica_producto(nombre, cant).
-%% 4. Consulta las existencias de productos con sistema:lista_existencias(). 
-%% 5. Elimina un producto con sistema:elimina_producto(nombre).
-%% 6. Cierra la tienda con sistema:cierra_tienda(). Esto borrará todos los datos de la tienda.
+%%%%%  Como usar la tienda
+%% Iniciar            | sistema:abre_tienda().
+%% Agregar producto   | sistema:registra_producto(algo, 2).
+%% Modificar producto | sistema:modifica_producto(algo, 2).
+%% Listar existencias | sistema:lista_existencias(). 
+%% Eliminar producto  | sistema:elimina_producto(algo).
+%% Cerrar y borrar    | sistema:cierra_tienda().
 
-%% Guía de Uso - FUNCIONES DEL SOCIO
-%% 1. Registra un nuevo socio con sistema:suscribir_socio(nom).
-%% 2. Elimina un socio existente con sistema:elimina_socio(nom).
-%% 3. Consulta la lista de socios con sistema:lista_socios().
-%% 4. Crea un pedido personalizado con sistema:crea_pedido(nom, [{nombre, cant}, {nombre1, cant1}]).
-
-%% Nota: Recuerda reemplazar los valores de nombreProducto, cantidad, nombreSocio, etc., con los valores que desees.
+%%%%%%  Como usar los socios
+%% Registrar socio | sistema:suscribir_socio(fulano).
+%% Eliminar socio  | sistema:elimina_socio(fulano).
+%% Listar socios   | sistema:lista_socios().
+%% Crea pedido     | sistema:crea_pedido(fulano, [{nombre, cant}, {nombre1, cant1}]).
 
 %%% Módulo del sistema
 -module(sistema).
@@ -29,16 +27,12 @@
     registra_producto/2, elimina_producto/1, modifica_producto/2
 ]).
 
-%% ====================================================================
-%% Funciones del socio directamente
-%% ====================================================================
-
-%% Suscripción de un nuevo socio.
+%% Registro de un nuevo socio.
 suscribir_socio(Socio) ->
     io:format("Manda: ~p solicita suscripción~n", [Socio]),
     tienda ! {suscribir_socio, Socio}.
 
-%% Eliminación de un socio.
+%% Eliminar socio.
 elimina_socio(Socio) -> 
     io:format("Manda: ~p elimina suscripción~n", [Socio]),
     tienda ! {elimina_socio, Socio}.
@@ -55,10 +49,6 @@ lista_existencias() ->
         {existencias, Existencias} ->
             io:format("Existencias: ~p~n", [Existencias])
     end.
-
-%% ====================================================================
-%% Funciones de la tienda
-%% ====================================================================
 
 %% Abre la tienda e inicia su proceso.
 abre_tienda() ->
@@ -100,9 +90,7 @@ modifica_producto(Producto, Cantidad) ->
     tienda ! {modifica_producto, Producto, Cantidad},
     io:format("Modifica: Cantidad de ~p cambia a ~p~n", [Producto, Cantidad]).
 
-%% ====================================================================
-%% Bucle principal de la tienda
-%% ====================================================================
+%% Loop de la tienda
 tienda_loop() ->
     %% Estado inicial
     loop([], [], 0).
