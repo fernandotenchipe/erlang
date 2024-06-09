@@ -6,6 +6,7 @@
 
 
 %%%%%  Como usar la tienda
+%% Cargar el módulo   | c(sistema).
 %% Iniciar            | sistema:abre_tienda().
 %% Agregar producto   | sistema:registra_producto(algo, 2).
 %% Modificar producto | sistema:modifica_producto(algo, 2).
